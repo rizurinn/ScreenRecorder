@@ -1,0 +1,6 @@
+{
+  "name": "Screen Recorder",
+  "description": "A lightweight screen recorder supporting custom resolution, frame rates, multiple video encodings, and a Quick Settings shortcut.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
