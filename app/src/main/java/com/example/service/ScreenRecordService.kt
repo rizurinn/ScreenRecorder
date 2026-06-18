@@ -257,8 +257,21 @@ class ScreenRecordService : Service() {
         val videoEncoder = getMediaRecorderEncoder(currentEncoder)
         val extension = getFileExtension(currentEncoder)
 
-        val baseDir = getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES) ?: filesDir
-        if (!baseDir.exists()) baseDir.mkdirs()
+        var baseDir = File(
+            android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MOVIES),
+            "ScreenRecorder"
+        )
+        try {
+            if (!baseDir.exists()) {
+                baseDir.mkdirs()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create public ScreenRecorder directory, fallback to app private storage", e)
+            baseDir = getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES) ?: filesDir
+        }
+        if (!baseDir.exists()) {
+            baseDir = getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES) ?: filesDir
+        }
         
         val file = File(baseDir, "Record_${System.currentTimeMillis()}.$extension")
         currentFile = file
@@ -491,6 +504,15 @@ class ScreenRecordService : Service() {
             }
             Log.d(TAG, "Successfully saved video/audio recording to Room.")
 
+            // Scan the video file so it immediately shows up in the user's Gallery
+            android.media.MediaScannerConnection.scanFile(
+                applicationContext,
+                arrayOf(file.absolutePath),
+                arrayOf("video/mp4")
+            ) { path, uri ->
+                Log.d(TAG, "Scanned video $path to MediaStore -> uri: $uri")
+            }
+
             // Register companion audio file in Split mode
             if (audioSource != "None" && !mergeAudioVideo) {
                 if (audioF != null && audioF.exists()) {
@@ -507,6 +529,15 @@ class ScreenRecordService : Service() {
                         repository.insert(audioEntity)
                     }
                     Log.d(TAG, "Successfully saved companion audio recording to Room.")
+
+                    // Scan companion audio file
+                    android.media.MediaScannerConnection.scanFile(
+                        applicationContext,
+                        arrayOf(audioF.absolutePath),
+                        arrayOf("audio/wav")
+                    ) { path, uri ->
+                        Log.d(TAG, "Scanned companion audio $path to MediaStore -> uri: $uri")
+                    }
                 }
             }
         } catch (e: Exception) {

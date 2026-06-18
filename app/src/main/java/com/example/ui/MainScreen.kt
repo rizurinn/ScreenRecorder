@@ -44,6 +44,7 @@ import java.io.File
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -65,7 +66,16 @@ fun MainScreen(
     val isExpanded = configuration.screenWidthDp >= 600
 
     // Temporary variables for inputs
-    var showCustomResolution by remember { mutableStateOf(false) }
+    val currentIsPreset = remember(settings, localContext) {
+        val ratio = RecordSettings.getScreenAspect(localContext)
+        val fhdHeight = ((1080 * ratio) / 16.0).roundToInt() * 16
+        val hdHeight = ((720 * ratio) / 16.0).roundToInt() * 16
+        val sdHeight = ((480 * ratio) / 16.0).roundToInt() * 16
+        (settings.resolutionWidth == 1080 && settings.resolutionHeight == fhdHeight) ||
+        (settings.resolutionWidth == 720 && settings.resolutionHeight == hdHeight) ||
+        (settings.resolutionWidth == 480 && settings.resolutionHeight == sdHeight)
+    }
+    var showCustomResolution by remember { mutableStateOf(!currentIsPreset) }
     var widthInput by remember { mutableStateOf(settings.resolutionWidth.toString()) }
     var heightInput by remember { mutableStateOf(settings.resolutionHeight.toString()) }
 
@@ -243,11 +253,22 @@ fun MainScreen(
                                 }
                                 item {
                                     AudioSection(
-                                        recordAudio = settings.recordAudio,
-                                        enabled = settingsEnabled,
-                                        onRecordAudioChange = {
-                                            viewModel.updateSettings(settings.copy(recordAudio = it))
-                                        }
+                                        audioSource = settings.audioSource,
+                                        onAudioSourceChange = { source ->
+                                            viewModel.updateSettings(
+                                                settings.copy(
+                                                    audioSource = source,
+                                                    recordAudio = source != "None"
+                                                )
+                                            )
+                                        },
+                                        mergeAudioVideo = settings.mergeAudioVideo,
+                                        onMergeAudioVideoChange = { merge ->
+                                            viewModel.updateSettings(
+                                                settings.copy(mergeAudioVideo = merge)
+                                            )
+                                        },
+                                        enabled = settingsEnabled
                                     )
                                 }
                             }
@@ -402,11 +423,22 @@ fun MainScreen(
 
                     item {
                         AudioSection(
-                            recordAudio = settings.recordAudio,
-                            enabled = settingsEnabled,
-                            onRecordAudioChange = {
-                                viewModel.updateSettings(settings.copy(recordAudio = it))
-                            }
+                            audioSource = settings.audioSource,
+                            onAudioSourceChange = { source ->
+                                viewModel.updateSettings(
+                                    settings.copy(
+                                        audioSource = source,
+                                        recordAudio = source != "None"
+                                    )
+                                )
+                            },
+                            mergeAudioVideo = settings.mergeAudioVideo,
+                            onMergeAudioVideoChange = { merge ->
+                                viewModel.updateSettings(
+                                    settings.copy(mergeAudioVideo = merge)
+                                )
+                            },
+                            enabled = settingsEnabled
                         )
                     }
 
@@ -666,6 +698,12 @@ fun ResolutionSection(
     onPresetSelected: (Int, Int) -> Unit,
     onCustomToggle: () -> Unit
 ) {
+    val localContext = LocalContext.current
+    val ratio = remember(localContext) { RecordSettings.getScreenAspect(localContext) }
+    val fhdHeight = remember(ratio) { ((1080 * ratio) / 16.0).roundToInt() * 16 }
+    val hdHeight = remember(ratio) { ((720 * ratio) / 16.0).roundToInt() * 16 }
+    val sdHeight = remember(ratio) { ((480 * ratio) / 16.0).roundToInt() * 16 }
+
     Card(
         modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.65f),
         shape = RoundedCornerShape(16.dp),
@@ -697,24 +735,24 @@ fun ResolutionSection(
                 ResolutionChip(
                     label = "1080p (FHD)",
                     width = 1080,
-                    height = 1920,
-                    isSelected = !showCustomResolution && widthInput == "1080" && heightInput == "1920",
+                    height = fhdHeight,
+                    isSelected = !showCustomResolution && widthInput == "1080" && heightInput == fhdHeight.toString(),
                     enabled = enabled,
                     onSelect = onPresetSelected
                 )
                 ResolutionChip(
                     label = "720p (HD)",
                     width = 720,
-                    height = 1280,
-                    isSelected = !showCustomResolution && widthInput == "720" && heightInput == "1280",
+                    height = hdHeight,
+                    isSelected = !showCustomResolution && widthInput == "720" && heightInput == hdHeight.toString(),
                     enabled = enabled,
                     onSelect = onPresetSelected
                 )
                 ResolutionChip(
                     label = "480p (SD)",
                     width = 480,
-                    height = 854,
-                    isSelected = !showCustomResolution && widthInput == "480" && heightInput == "854",
+                    height = sdHeight,
+                    isSelected = !showCustomResolution && widthInput == "480" && heightInput == sdHeight.toString(),
                     enabled = enabled,
                     onSelect = onPresetSelected
                 )
@@ -1040,48 +1078,107 @@ data class CodecSpec(
     val enabled: Boolean
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AudioSection(
-    recordAudio: Boolean,
-    enabled: Boolean = true,
-    onRecordAudioChange: (Boolean) -> Unit
+    audioSource: String,
+    onAudioSourceChange: (String) -> Unit,
+    mergeAudioVideo: Boolean,
+    onMergeAudioVideoChange: (Boolean) -> Unit,
+    enabled: Boolean = true
 ) {
     Card(
         modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.65f),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Icon(
-                imageVector = if (recordAudio) Icons.Default.Mic else Icons.AutoMirrored.Filled.VolumeMute,
-                contentDescription = "Audio option icon",
-                tint = if (recordAudio) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(end = 12.dp)
-            )
-            Column(modifier = Modifier.weight(1f)) {
+            // Title & Icon Row
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (audioSource != "None") Icons.Default.Mic else Icons.AutoMirrored.Filled.VolumeMute,
+                    contentDescription = "Audio options icon",
+                    tint = if (audioSource != "None") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
                 Text(
-                    "Include Microphone Audio",
+                    "Audio Configuration",
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 )
-                Text(
-                    "Simultaneously captures user microphone voice while recording.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 16.sp
+            }
+
+            Text(
+                "Select where audio should be captured from during screen recording.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 16.sp
+            )
+
+            // Audio Source segment chips
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf("None", "Mic", "Internal", "Both").forEach { source ->
+                    val isSelected = audioSource == source
+                    val label = when (source) {
+                        "None" -> "Mute"
+                        "Mic" -> "Microphone"
+                        "Internal" -> "Device Audio"
+                        "Both" -> "Mic & Device"
+                        else -> source
+                    }
+                    FilterChip(
+                        selected = isSelected,
+                        enabled = enabled,
+                        onClick = { onAudioSourceChange(source) },
+                        label = { Text(label) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        ),
+                        modifier = Modifier.testTag("audio_source_chip_$source")
+                    )
+                }
+            }
+
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                thickness = 1.dp
+            )
+
+            // Merge switch row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Merge Audio and Video",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        "Integrate audio tracks automatically, or preserve separate files",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 16.sp
+                    )
+                }
+                Switch(
+                    checked = mergeAudioVideo,
+                    enabled = enabled,
+                    onCheckedChange = onMergeAudioVideoChange,
+                    modifier = Modifier.testTag("audio_merge_switch")
                 )
             }
-            Switch(
-                checked = recordAudio,
-                enabled = enabled,
-                onCheckedChange = onRecordAudioChange,
-                modifier = Modifier.testTag("audio_switch")
-            )
         }
     }
 }

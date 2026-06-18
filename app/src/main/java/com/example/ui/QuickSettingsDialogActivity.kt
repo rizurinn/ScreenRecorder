@@ -107,11 +107,7 @@ class QuickSettingsDialogActivity : ComponentActivity() {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f))
-                        .clickable { 
-                            // Tapping outside closes the dialog activity
-                            finish() 
-                        },
+                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Card(
@@ -270,8 +266,9 @@ class QuickSettingsDialogActivity : ComponentActivity() {
                                     Button(
                                         onClick = {
                                             // Save configurations
+                                            val ratio = RecordSettings.getScreenAspect(this@QuickSettingsDialogActivity)
                                             val resolutionW = if (selectedResolution == "1080p") 1080 else if (selectedResolution == "720p") 720 else 480
-                                            val resolutionH = if (selectedResolution == "1080p") 1920 else if (selectedResolution == "720p") 1280 else 854
+                                            val resolutionH = (kotlin.math.round((resolutionW * ratio) / 16.0) * 16).toInt()
                                             val bitRate = if (selectedResolution == "1080p") 8000000 else if (selectedResolution == "720p") 4000000 else 2000000
                                             
                                             settings = RecordSettings(
@@ -363,6 +360,13 @@ class QuickSettingsDialogActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+
+        // On Android 9 and lower (API <= 28), we need WRITE_EXTERNAL_STORAGE to write to public Movies directory
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             }
         }
 
