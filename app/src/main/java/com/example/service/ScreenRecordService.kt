@@ -99,7 +99,8 @@ class ScreenRecordService : Service() {
     enum class RecordingState {
         IDLE,
         RECORDING,
-        PAUSED
+        PAUSED,
+        PROCESSING
     }
 
     override fun onCreate() {
@@ -139,8 +140,11 @@ class ScreenRecordService : Service() {
                 }
             }
             ACTION_STOP -> {
-                stopRecording()
-                stopSelf()
+                if (isRecordingInternal) {
+                    stopRecording()
+                } else {
+                    stopSelf()
+                }
             }
             ACTION_PAUSE -> {
                 pauseRecording()
@@ -257,8 +261,21 @@ class ScreenRecordService : Service() {
         val videoEncoder = getMediaRecorderEncoder(currentEncoder)
         val extension = getFileExtension(currentEncoder)
 
-        val baseDir = getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES) ?: filesDir
-        if (!baseDir.exists()) baseDir.mkdirs()
+        var baseDir = File(
+            android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MOVIES),
+            "ScreenRecorder"
+        )
+        try {
+            if (!baseDir.exists()) {
+                baseDir.mkdirs()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create public ScreenRecorder directory, fallback to app private storage", e)
+            baseDir = getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES) ?: filesDir
+        }
+        if (!baseDir.exists()) {
+            baseDir = getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES) ?: filesDir
+        }
         
         val file = File(baseDir, "Record_${System.currentTimeMillis()}.$extension")
         currentFile = file
@@ -343,6 +360,8 @@ class ScreenRecordService : Service() {
 
     private fun stopRecording() {
         if (!isRecordingInternal) return
+        _recordingState.value = RecordingState.PROCESSING
+        updateNotification("Saving and finalizing recording...")
         isRecordingInternal = false
         stopTimer()
 
@@ -373,59 +392,65 @@ class ScreenRecordService : Service() {
 
         // Post-processing: run merge in background thread
         Thread({
-            var finalAudioF = audioF
-            if (videoFile != null && videoFile.exists() && audioF != null && audioF.exists() && audioSourceTemp != "None") {
-                if (mergeTemp) {
-                    try {
-                        val aacFile = File(audioF.parent, audioF.nameWithoutExtension + ".aac")
-                        val mergedFile = File(videoFile.parent, videoFile.nameWithoutExtension + "_merged." + videoFile.extension)
-                        
-                        // 1. Encode WAV to AAC
-                        encodeWavToAac(audioF, aacFile)
-                        
-                        // 2. Merge Video and AAC
-                        mergeVideoAndAudio(videoFile, aacFile, mergedFile)
-                        
-                        // 3. Swap files
-                        if (mergedFile.exists() && mergedFile.length() > 0) {
-                            videoFile.delete()
-                            mergedFile.renameTo(videoFile)
-                            Log.d(TAG, "Successfully merged audio and video track.")
+            try {
+                var finalAudioF = audioF
+                if (videoFile != null && videoFile.exists() && audioF != null && audioF.exists() && audioSourceTemp != "None") {
+                    if (mergeTemp) {
+                        try {
+                            val aacFile = File(audioF.parent, audioF.nameWithoutExtension + ".aac")
+                            val mergedFile = File(videoFile.parent, videoFile.nameWithoutExtension + "_merged." + videoFile.extension)
+                            
+                            // 1. Encode WAV to AAC
+                            encodeWavToAac(audioF, aacFile)
+                            
+                            // 2. Merge Video and AAC
+                            mergeVideoAndAudio(videoFile, aacFile, mergedFile)
+                            
+                            // 3. Swap files
+                            if (mergedFile.exists() && mergedFile.length() > 0) {
+                                videoFile.delete()
+                                mergedFile.renameTo(videoFile)
+                                Log.d(TAG, "Successfully merged audio and video track.")
+                            }
+                            
+                            // 4. Delete temp audio files
+                            audioF.delete()
+                            if (aacFile.exists()) aacFile.delete()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error merging audio and video tracks, keeping unmerged files", e)
                         }
-                        
-                        // 4. Delete temp audio files
-                        audioF.delete()
-                        if (aacFile.exists()) aacFile.delete()
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error merging audio and video tracks, keeping unmerged files", e)
-                    }
-                } else {
-                    // Split mode: move WAV to the same directory as MP4 video for ease of access
-                    try {
-                        val publicAudioFile = File(videoFile.parent, videoFile.nameWithoutExtension + "_audio.wav")
-                        if (audioF.renameTo(publicAudioFile)) {
-                            finalAudioF = publicAudioFile
-                            Log.d(TAG, "Split mode: audio written directly to ${publicAudioFile.absolutePath}")
-                        } else {
-                            Log.e(TAG, "Split mode: failed to rename audio to ${publicAudioFile.absolutePath}")
+                    } else {
+                        // Split mode: move WAV to the same directory as MP4 video for ease of access
+                        try {
+                            val publicAudioFile = File(videoFile.parent, videoFile.nameWithoutExtension + "_audio.wav")
+                            if (audioF.renameTo(publicAudioFile)) {
+                                finalAudioF = publicAudioFile
+                                Log.d(TAG, "Split mode: audio written directly to ${publicAudioFile.absolutePath}")
+                            } else {
+                                Log.e(TAG, "Split mode: failed to rename audio to ${publicAudioFile.absolutePath}")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error renaming audio file in split mode", e)
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error renaming audio file in split mode", e)
                     }
                 }
-            }
 
-            saveRecordingToDatabaseBackground(
-                videoFile,
-                duration,
-                widthTemp,
-                heightTemp,
-                fpsTemp,
-                encoderTemp,
-                audioSourceTemp,
-                mergeTemp,
-                finalAudioF
-            )
+                saveRecordingToDatabaseBackground(
+                    videoFile,
+                    duration,
+                    widthTemp,
+                    heightTemp,
+                    fpsTemp,
+                    encoderTemp,
+                    audioSourceTemp,
+                    mergeTemp,
+                    finalAudioF
+                )
+            } finally {
+                _recordingState.value = RecordingState.IDLE
+                stopForeground(true)
+                stopSelf()
+            }
         }, "ScreenRecordMergeThread").start()
 
         cleanup()
@@ -491,6 +516,15 @@ class ScreenRecordService : Service() {
             }
             Log.d(TAG, "Successfully saved video/audio recording to Room.")
 
+            // Scan the video file so it immediately shows up in the user's Gallery
+            android.media.MediaScannerConnection.scanFile(
+                applicationContext,
+                arrayOf(file.absolutePath),
+                arrayOf("video/mp4")
+            ) { path, uri ->
+                Log.d(TAG, "Scanned video $path to MediaStore -> uri: $uri")
+            }
+
             // Register companion audio file in Split mode
             if (audioSource != "None" && !mergeAudioVideo) {
                 if (audioF != null && audioF.exists()) {
@@ -507,6 +541,15 @@ class ScreenRecordService : Service() {
                         repository.insert(audioEntity)
                     }
                     Log.d(TAG, "Successfully saved companion audio recording to Room.")
+
+                    // Scan companion audio file
+                    android.media.MediaScannerConnection.scanFile(
+                        applicationContext,
+                        arrayOf(audioF.absolutePath),
+                        arrayOf("audio/wav")
+                    ) { path, uri ->
+                        Log.d(TAG, "Scanned companion audio $path to MediaStore -> uri: $uri")
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -953,9 +996,6 @@ class ScreenRecordService : Service() {
             Log.e(TAG, "Error stopping media projection", e)
         }
         mediaProjection = null
-
-        _recordingState.value = RecordingState.IDLE
-        stopForeground(true)
     }
 
     override fun onDestroy() {
@@ -1002,27 +1042,30 @@ class ScreenRecordService : Service() {
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            if (_recordingState.value == RecordingState.RECORDING) {
-                val pauseIntent = Intent(this, ScreenRecordService::class.java).apply { action = ACTION_PAUSE }
-                val pausePendingIntent = PendingIntent.getService(
-                    this,
-                    2,
-                    pauseIntent,
-                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-                )
-                builder.addAction(android.R.drawable.ic_media_pause, "Pause", pausePendingIntent)
-            } else if (_recordingState.value == RecordingState.PAUSED) {
-                val resumeIntent = Intent(this, ScreenRecordService::class.java).apply { action = ACTION_RESUME }
-                val resumePendingIntent = PendingIntent.getService(
-                    this,
-                    3,
-                    resumeIntent,
-                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-                )
-                builder.addAction(android.R.drawable.ic_media_play, "Resume", resumePendingIntent)
+        if (_recordingState.value != RecordingState.PROCESSING) {
+            builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                if (_recordingState.value == RecordingState.RECORDING) {
+                    val pauseIntent = Intent(this, ScreenRecordService::class.java).apply { action = ACTION_PAUSE }
+                    val pausePendingIntent = PendingIntent.getService(
+                        this,
+                        2,
+                        pauseIntent,
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                    )
+                    builder.addAction(android.R.drawable.ic_media_pause, "Pause", pausePendingIntent)
+                } else if (_recordingState.value == RecordingState.PAUSED) {
+                    val resumeIntent = Intent(this, ScreenRecordService::class.java).apply { action = ACTION_RESUME }
+                    val resumePendingIntent = PendingIntent.getService(
+                        this,
+                        3,
+                        resumeIntent,
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                    )
+                    builder.addAction(android.R.drawable.ic_media_play, "Resume", resumePendingIntent)
+                }
             }
         }
 

@@ -39,6 +39,7 @@ import java.io.File
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -59,8 +60,18 @@ fun MainScreen(
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val isExpanded = configuration.screenWidthDp >= 600
 
-    // Temporary variables for inputs
-    var showCustomResolution by remember { mutableStateOf(false) }
+    // Temporary variables for inputs. Detect whether current settings match an
+    // aspect-ratio-aware preset; otherwise default to the custom resolution input.
+    val currentIsPreset = remember(settings, localContext) {
+        val ratio = RecordSettings.getScreenAspect(localContext)
+        val fhdHeight = ((1080 * ratio) / 16.0).roundToInt() * 16
+        val hdHeight = ((720 * ratio) / 16.0).roundToInt() * 16
+        val sdHeight = ((480 * ratio) / 16.0).roundToInt() * 16
+        (settings.resolutionWidth == 1080 && settings.resolutionHeight == fhdHeight) ||
+        (settings.resolutionWidth == 720 && settings.resolutionHeight == hdHeight) ||
+        (settings.resolutionWidth == 480 && settings.resolutionHeight == sdHeight)
+    }
+    var showCustomResolution by remember { mutableStateOf(!currentIsPreset) }
     var widthInput by remember { mutableStateOf(settings.resolutionWidth.toString()) }
     var heightInput by remember { mutableStateOf(settings.resolutionHeight.toString()) }
 
@@ -193,11 +204,20 @@ fun MainScreen(
                             }
                             item {
                                 AudioSection(
-                                    recordAudio = settings.recordAudio,
-                                    enabled = settingsEnabled,
-                                    onRecordAudioChange = {
-                                        viewModel.updateSettings(settings.copy(recordAudio = it))
-                                    }
+                                    audioSource = settings.audioSource,
+                                    onAudioSourceChange = { source ->
+                                        viewModel.updateSettings(
+                                            settings.copy(
+                                                audioSource = source,
+                                                recordAudio = source != "None"
+                                            )
+                                        )
+                                    },
+                                    mergeAudioVideo = settings.mergeAudioVideo,
+                                    onMergeAudioVideoChange = { merge ->
+                                        viewModel.updateSettings(settings.copy(mergeAudioVideo = merge))
+                                    },
+                                    enabled = settingsEnabled
                                 )
                             }
                         }
@@ -323,11 +343,20 @@ fun MainScreen(
 
                     item {
                         AudioSection(
-                            recordAudio = settings.recordAudio,
-                            enabled = settingsEnabled,
-                            onRecordAudioChange = {
-                                viewModel.updateSettings(settings.copy(recordAudio = it))
-                            }
+                            audioSource = settings.audioSource,
+                            onAudioSourceChange = { source ->
+                                viewModel.updateSettings(
+                                    settings.copy(
+                                        audioSource = source,
+                                        recordAudio = source != "None"
+                                    )
+                                )
+                            },
+                            mergeAudioVideo = settings.mergeAudioVideo,
+                            onMergeAudioVideoChange = { merge ->
+                                viewModel.updateSettings(settings.copy(mergeAudioVideo = merge))
+                            },
+                            enabled = settingsEnabled
                         )
                     }
 
@@ -408,8 +437,10 @@ fun RecordingControllerCard(
     recordSettings: RecordSettings,
     localContext: Context
 ) {
-    val isRecording = recordingState != ScreenRecordService.RecordingState.IDLE
+    val isRecording = recordingState == ScreenRecordService.RecordingState.RECORDING ||
+        recordingState == ScreenRecordService.RecordingState.PAUSED
     val isPaused = recordingState == ScreenRecordService.RecordingState.PAUSED
+    val isProcessing = recordingState == ScreenRecordService.RecordingState.PROCESSING
 
     // Pulse animation for the recording indicator dot
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
@@ -527,6 +558,26 @@ fun RecordingControllerCard(
                         Text("Stop")
                     }
                 }
+            } else if (isProcessing) {
+                // Processing / finalizing state
+                CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.tertiary,
+                    strokeWidth = 4.dp,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("processing_progress_bar")
+                )
+                Text(
+                    "Saving & Finalizing…",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+                Text(
+                    "Merging audio tracks and registering the file in your media library. Don't close the app or start another recording.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
             } else {
                 // Ready to record state
                 Icon(
@@ -609,6 +660,13 @@ fun ResolutionSection(
     onPresetSelected: (Int, Int) -> Unit,
     onCustomToggle: () -> Unit
 ) {
+    // Compute preset heights from the device aspect ratio (rounded to a multiple of 16)
+    val localContext = LocalContext.current
+    val ratio = remember(localContext) { RecordSettings.getScreenAspect(localContext) }
+    val fhdHeight = remember(ratio) { ((1080 * ratio) / 16.0).roundToInt() * 16 }
+    val hdHeight = remember(ratio) { ((720 * ratio) / 16.0).roundToInt() * 16 }
+    val sdHeight = remember(ratio) { ((480 * ratio) / 16.0).roundToInt() * 16 }
+
     Box(modifier = Modifier.alpha(if (enabled) 1f else 0.5f)) {
         SettingsCard {
             SectionHeader(Icons.Default.AspectRatio, "Resolution")
@@ -621,24 +679,24 @@ fun ResolutionSection(
                 ResolutionChip(
                     label = "1080p",
                     width = 1080,
-                    height = 1920,
-                    isSelected = !showCustomResolution && widthInput == "1080" && heightInput == "1920",
+                    height = fhdHeight,
+                    isSelected = !showCustomResolution && widthInput == "1080" && heightInput == fhdHeight.toString(),
                     enabled = enabled,
                     onSelect = onPresetSelected
                 )
                 ResolutionChip(
                     label = "720p",
                     width = 720,
-                    height = 1280,
-                    isSelected = !showCustomResolution && widthInput == "720" && heightInput == "1280",
+                    height = hdHeight,
+                    isSelected = !showCustomResolution && widthInput == "720" && heightInput == hdHeight.toString(),
                     enabled = enabled,
                     onSelect = onPresetSelected
                 )
                 ResolutionChip(
                     label = "480p",
                     width = 480,
-                    height = 854,
-                    isSelected = !showCustomResolution && widthInput == "480" && heightInput == "854",
+                    height = sdHeight,
+                    isSelected = !showCustomResolution && widthInput == "480" && heightInput == sdHeight.toString(),
                     enabled = enabled,
                     onSelect = onPresetSelected
                 )
@@ -898,47 +956,86 @@ data class CodecSpec(
     val enabled: Boolean
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AudioSection(
-    recordAudio: Boolean,
-    enabled: Boolean = true,
-    onRecordAudioChange: (Boolean) -> Unit
+    audioSource: String,
+    onAudioSourceChange: (String) -> Unit,
+    mergeAudioVideo: Boolean,
+    onMergeAudioVideoChange: (Boolean) -> Unit,
+    enabled: Boolean = true
 ) {
     Box(modifier = Modifier.alpha(if (enabled) 1f else 0.5f)) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-        ) {
+        SettingsCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (audioSource != "None") Icons.Default.Mic else Icons.AutoMirrored.Filled.VolumeMute,
+                    contentDescription = null,
+                    tint = if (audioSource != "None") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+                Text(
+                    "Audio Configuration",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            Text(
+                "Select where audio should be captured from during screen recording.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // Audio source chips
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf("None", "Mic", "Internal", "Both").forEach { source ->
+                    val label = when (source) {
+                        "None" -> "Mute"
+                        "Mic" -> "Microphone"
+                        "Internal" -> "Device Audio"
+                        "Both" -> "Mic & Device"
+                        else -> source
+                    }
+                    FilterChip(
+                        selected = audioSource == source,
+                        enabled = enabled,
+                        onClick = { onAudioSourceChange(source) },
+                        label = { Text(label) },
+                        modifier = Modifier.testTag("audio_source_chip_$source")
+                    )
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            // Merge switch row
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = if (recordAudio) Icons.Default.Mic else Icons.AutoMirrored.Filled.VolumeMute,
-                    contentDescription = null,
-                    tint = if (recordAudio) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(end = 12.dp)
-                )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "Microphone Audio",
+                        "Merge Audio and Video",
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        "Capture microphone voice while recording.",
+                        "Integrate audio tracks automatically, or keep separate files.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 Switch(
-                    checked = recordAudio,
+                    checked = mergeAudioVideo,
                     enabled = enabled,
-                    onCheckedChange = onRecordAudioChange,
-                    modifier = Modifier.testTag("audio_switch")
+                    onCheckedChange = onMergeAudioVideoChange,
+                    modifier = Modifier.testTag("audio_merge_switch")
                 )
             }
         }
