@@ -494,8 +494,9 @@ fun RecordingControllerCard(
     recordSettings: RecordSettings,
     localContext: Context
 ) {
-    val isRecording = recordingState != ScreenRecordService.RecordingState.IDLE
+    val isRecording = recordingState == ScreenRecordService.RecordingState.RECORDING || recordingState == ScreenRecordService.RecordingState.PAUSED
     val isPaused = recordingState == ScreenRecordService.RecordingState.PAUSED
+    val isProcessing = recordingState == ScreenRecordService.RecordingState.PROCESSING
 
     // Pulse animation for recording indicators
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
@@ -516,13 +517,21 @@ fun RecordingControllerCard(
         colors = CardDefaults.cardColors(
             containerColor = if (isRecording) {
                 MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
+            } else if (isProcessing) {
+                MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.15f)
             } else {
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
             }
         ),
         border = BorderStroke(
             width = 1.dp,
-            color = if (isRecording) MaterialTheme.colorScheme.error.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+            color = if (isRecording) {
+                MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+            } else if (isProcessing) {
+                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f)
+            } else {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+            }
         )
     ) {
         Column(
@@ -632,6 +641,31 @@ fun RecordingControllerCard(
                         Text("Stop Record")
                     }
                 }
+            } else if (isProcessing) {
+                // Processing / finalizing state visualizer
+                Spacer(modifier = Modifier.height(8.dp))
+                CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.tertiary,
+                    strokeWidth = 4.dp,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("processing_progress_bar")
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Saving & Finalizing...",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+                Text(
+                    text = "Merging audio tracks & registering media in file manager. Do not close the app or start another recording.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 18.sp,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
             } else {
                 // Ready to record state visualizer
                 Box(

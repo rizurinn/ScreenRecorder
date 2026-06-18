@@ -24,10 +24,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -102,7 +104,10 @@ class QuickSettingsDialogActivity : ComponentActivity() {
         setContent {
             MyApplicationTheme {
                 val recordingState by ScreenRecordService.recordingState.collectAsState()
-                val isRecording = recordingState != ScreenRecordService.RecordingState.IDLE
+                val isRecording = recordingState == ScreenRecordService.RecordingState.RECORDING || recordingState == ScreenRecordService.RecordingState.PAUSED
+                val isProcessing = recordingState == ScreenRecordService.RecordingState.PROCESSING
+                val isIdle = recordingState == ScreenRecordService.RecordingState.IDLE
+                val settingsLocked = !isIdle
 
                 Box(
                     modifier = Modifier
@@ -161,6 +166,35 @@ class QuickSettingsDialogActivity : ComponentActivity() {
                                         )
                                     }
                                 }
+                            } else if (isProcessing) {
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 16.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.2f)
+                                    ),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f)),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        CircularProgressIndicator(
+                                            color = MaterialTheme.colorScheme.tertiary,
+                                            strokeWidth = 2.dp,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = "Saving and processing media...",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                                        )
+                                    }
+                                }
                             }
 
                             // Choices layout
@@ -174,7 +208,7 @@ class QuickSettingsDialogActivity : ComponentActivity() {
                                 label = "Resolution",
                                 options = listOf("1080p", "720p", "480p"),
                                 selected = selectedResolution,
-                                enabled = !isRecording,
+                                enabled = !settingsLocked,
                                 onSelect = { selectedResolution = it }
                             )
 
@@ -185,7 +219,7 @@ class QuickSettingsDialogActivity : ComponentActivity() {
                                 label = "Frame Rate",
                                 options = listOf("30 FPS", "60 FPS"),
                                 selected = "${selectedFps} FPS",
-                                enabled = !isRecording,
+                                enabled = !settingsLocked,
                                 onSelect = { 
                                     selectedFps = if (it == "30 FPS") 30 else 60
                                 }
@@ -198,7 +232,7 @@ class QuickSettingsDialogActivity : ComponentActivity() {
                                 label = "Audio Source",
                                 options = listOf("None", "Mic", "Internal", "Both"),
                                 selected = selectedAudioSource,
-                                enabled = !isRecording,
+                                enabled = !settingsLocked,
                                 onSelect = { selectedAudioSource = it }
                             )
 
@@ -208,7 +242,7 @@ class QuickSettingsDialogActivity : ComponentActivity() {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .alpha(if (!isRecording) 1f else 0.65f)
+                                    .alpha(if (!settingsLocked) 1f else 0.65f)
                                     .padding(vertical = 4.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
@@ -228,7 +262,7 @@ class QuickSettingsDialogActivity : ComponentActivity() {
                                 }
                                 Switch(
                                     checked = mergeAudioVideo,
-                                    enabled = !isRecording,
+                                    enabled = !settingsLocked,
                                     onCheckedChange = { mergeAudioVideo = it },
                                     modifier = Modifier.testTag("qs_merge_switch")
                                 )
@@ -243,6 +277,7 @@ class QuickSettingsDialogActivity : ComponentActivity() {
                             ) {
                                 TextButton(
                                     onClick = { finish() },
+                                    enabled = !isProcessing,
                                     modifier = Modifier.padding(end = 8.dp)
                                 ) {
                                     Text("Cancel")
@@ -261,6 +296,22 @@ class QuickSettingsDialogActivity : ComponentActivity() {
                                         )
                                     ) {
                                         Text("Stop Recording")
+                                    }
+                                } else if (isProcessing) {
+                                    Button(
+                                        onClick = {},
+                                        enabled = false,
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+                                        )
+                                    ) {
+                                        CircularProgressIndicator(
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                                            strokeWidth = 2.dp,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Finalizing...")
                                     }
                                 } else {
                                     Button(
