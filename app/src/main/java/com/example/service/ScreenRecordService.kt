@@ -86,6 +86,10 @@ class ScreenRecordService : Service() {
         const val EXTRA_AUDIO_SOURCE = "EXTRA_AUDIO_SOURCE"
         const val EXTRA_MERGE_AUDIO_VIDEO = "EXTRA_MERGE_AUDIO_VIDEO"
 
+        // Use 48000Hz stereo to record game background music and SFX reliably on Android 15
+        const val AUDIO_SAMPLE_RATE = 48000
+        const val AUDIO_CHANNELS = 2
+
         private val _recordingState = MutableStateFlow(RecordingState.IDLE)
         val recordingState: StateFlow<RecordingState> = _recordingState
 
@@ -564,12 +568,20 @@ class ScreenRecordService : Service() {
         if (!baseDir.exists()) baseDir.mkdirs()
         audioFile = File(baseDir, "TempAudio_${System.currentTimeMillis()}.wav")
 
-        val sampleRate = 44100
+        val sampleRate = AUDIO_SAMPLE_RATE // 48000
         val encoding = android.media.AudioFormat.ENCODING_PCM_16BIT
-        val channelMask = android.media.AudioFormat.CHANNEL_IN_MONO
-        val channels = 1
+        val channelMaskMic = android.media.AudioFormat.CHANNEL_IN_MONO
+        val channelMaskInternal = android.media.AudioFormat.CHANNEL_IN_STEREO
+        val channels = AUDIO_CHANNELS // 2
 
-        val bufferSize = android.media.AudioRecord.getMinBufferSize(sampleRate, channelMask, encoding)
+        val bufferSizeMic = maxOf(
+            android.media.AudioRecord.getMinBufferSize(sampleRate, channelMaskMic, encoding),
+            4096
+        )
+        val bufferSizeInternal = maxOf(
+            android.media.AudioRecord.getMinBufferSize(sampleRate, channelMaskInternal, encoding),
+            4096
+        )
 
         audioThread = Thread({
             var fos: java.io.FileOutputStream? = null
@@ -588,17 +600,17 @@ class ScreenRecordService : Service() {
                         audioRecordMic = android.media.AudioRecord(
                             android.media.MediaRecorder.AudioSource.CAMCORDER,
                             sampleRate,
-                            channelMask,
+                            channelMaskMic,
                             encoding,
-                            bufferSize * 2
+                            bufferSizeMic * 2
                         )
                         if (audioRecordMic?.state != android.media.AudioRecord.STATE_INITIALIZED) {
                             audioRecordMic = android.media.AudioRecord(
                                 android.media.MediaRecorder.AudioSource.MIC,
                                 sampleRate,
-                                channelMask,
+                                channelMaskMic,
                                 encoding,
-                                bufferSize * 2
+                                bufferSizeMic * 2
                             )
                         }
                         audioRecordMic?.startRecording()
@@ -621,9 +633,9 @@ class ScreenRecordService : Service() {
                                 .setAudioFormat(android.media.AudioFormat.Builder()
                                     .setEncoding(encoding)
                                     .setSampleRate(sampleRate)
-                                    .setChannelMask(channelMask)
+                                    .setChannelMask(channelMaskInternal)
                                     .build())
-                                .setBufferSizeInBytes(bufferSize * 2)
+                                .setBufferSizeInBytes(bufferSizeInternal * 2)
                                 .build()
                             audioRecordInternal?.startRecording()
                         } catch (e: Exception) {
@@ -634,9 +646,13 @@ class ScreenRecordService : Service() {
                     }
                 }
 
-                val buffer1 = ShortArray(bufferSize)
-                val buffer2 = ShortArray(bufferSize)
-                val byteBuffer = ByteArray(bufferSize * 2)
+                val bufferSizeMicShorts = bufferSizeMic / 2
+                val bufferSizeInternalShorts = bufferSizeInternal / 2
+                val buffer1 = ShortArray(bufferSizeMicShorts) // mic (mono)
+                val buffer2 = ShortArray(bufferSizeInternalShorts) // internal (stereo)
+
+                val maxBufferSizeShorts = maxOf(bufferSizeMicShorts * 2, bufferSizeInternalShorts)
+                val byteBuffer = ByteArray(maxBufferSizeShorts * 2) // fits mixed stereo frames
                 var bytesWritten = 0L
 
                 while (isAudioRecording) {
@@ -645,35 +661,52 @@ class ScreenRecordService : Service() {
 
                     if (audioRecordMic != null && useMic) {
                         readMicCount = audioRecordMic!!.read(buffer1, 0, buffer1.size)
+                        if (readMicCount < 0) readMicCount = 0
                     }
                     if (audioRecordInternal != null && useInternal && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         readInternalCount = audioRecordInternal!!.read(buffer2, 0, buffer2.size)
+                        if (readInternalCount < 0) readInternalCount = 0
                     }
 
-                    val maxCount = Math.max(readMicCount, readInternalCount)
-                    if (maxCount <= 0) {
+                    val micFrames = readMicCount
+                    val internalFrames = readInternalCount / 2
+                    val maxFrames = maxOf(micFrames, internalFrames)
+
+                    if (maxFrames <= 0) {
                         Thread.sleep(10)
                         continue
                     }
 
                     // Mix buffers if both are used, otherwise copy/pass
-                    for (i in 0 until maxCount) {
-                        val micVal = if (i < readMicCount) buffer1[i].toInt() else 0
-                        val intVal = if (i < readInternalCount) buffer2[i].toInt() else 0
+                    for (f in 0 until maxFrames) {
+                        val micVal = if (f < micFrames) buffer1[f].toInt() else 0
+                        val intLeft = if (2 * f < readInternalCount) buffer2[2 * f].toInt() else 0
+                        val intRight = if (2 * f + 1 < readInternalCount) buffer2[2 * f + 1].toInt() else 0
+
                         // Mix safely avoiding digital clipping
-                        val mixed = micVal + intVal
-                        val finalShort = when {
-                            mixed > Short.MAX_VALUE -> Short.MAX_VALUE
-                            mixed < Short.MIN_VALUE -> Short.MIN_VALUE
-                            else -> mixed.toShort()
+                        val mixedLeft = intLeft + micVal
+                        val mixedRight = intRight + micVal
+
+                        val finalLeft = when {
+                            mixedLeft > Short.MAX_VALUE -> Short.MAX_VALUE
+                            mixedLeft < Short.MIN_VALUE -> Short.MIN_VALUE
+                            else -> mixedLeft.toShort()
                         }
-                        // Write to byteBuffer
-                        byteBuffer[i * 2] = (finalShort.toInt() and 0xff).toByte()
-                        byteBuffer[i * 2 + 1] = ((finalShort.toInt() shr 8) and 0xff).toByte()
+                        val finalRight = when {
+                            mixedRight > Short.MAX_VALUE -> Short.MAX_VALUE
+                            mixedRight < Short.MIN_VALUE -> Short.MIN_VALUE
+                            else -> mixedRight.toShort()
+                        }
+
+                        // Write to byteBuffer (interleaved L and R channels)
+                        byteBuffer[f * 4] = (finalLeft.toInt() and 0xff).toByte()
+                        byteBuffer[f * 4 + 1] = ((finalLeft.toInt() shr 8) and 0xff).toByte()
+                        byteBuffer[f * 4 + 2] = (finalRight.toInt() and 0xff).toByte()
+                        byteBuffer[f * 4 + 3] = ((finalRight.toInt() shr 8) and 0xff).toByte()
                     }
 
-                    fos.write(byteBuffer, 0, maxCount * 2)
-                    bytesWritten += maxCount * 2
+                    fos.write(byteBuffer, 0, maxFrames * 4)
+                    bytesWritten += maxFrames * 4
                 }
 
                 // Update WAV header with actual data lengths
@@ -761,8 +794,8 @@ class ScreenRecordService : Service() {
     }
 
     private fun encodeWavToAac(wavFile: File, aacFile: File) {
-        val sampleRate = 44100
-        val channels = 1
+        val sampleRate = AUDIO_SAMPLE_RATE
+        val channels = AUDIO_CHANNELS
         val bitRate = 128000
         
         val format = android.media.MediaFormat.createAudioFormat(android.media.MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, channels)
@@ -803,8 +836,7 @@ class ScreenRecordService : Service() {
                     } else {
                         inputBuffer.put(buffer, 0, bytesRead)
                         codec.queueInputBuffer(inputBufferIndex, 0, bytesRead, totalPresentationTimeUs, 0)
-                        val samples = bytesRead / 2
-                        val durationUs = (samples * 1000000L) / sampleRate
+                        val durationUs = (bytesRead.toLong() * 1000000L) / (2 * channels * sampleRate)
                         totalPresentationTimeUs += durationUs
                     }
                 }

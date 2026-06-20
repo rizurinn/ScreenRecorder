@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Build
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -25,11 +26,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.example.data.RecordingEntity
 import com.example.data.RecordSettings
@@ -41,7 +46,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.roundToInt
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MainScreen(
     viewModel: ScreenRecordViewModel,
@@ -60,8 +65,7 @@ fun MainScreen(
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val isExpanded = configuration.screenWidthDp >= 600
 
-    // Temporary variables for inputs. Detect whether current settings match an
-    // aspect-ratio-aware preset; otherwise default to the custom resolution input.
+    // Temporary variables for inputs
     val currentIsPreset = remember(settings, localContext) {
         val ratio = RecordSettings.getScreenAspect(localContext)
         val fhdHeight = ((1080 * ratio) / 16.0).roundToInt() * 16
@@ -100,18 +104,27 @@ fun MainScreen(
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
-            CenterAlignedTopAppBar(
+            @OptIn(ExperimentalMaterial3Api::class)
+            TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Default.Videocam,
-                            contentDescription = null,
+                            contentDescription = "App Icon",
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(end = 8.dp)
                         )
-                        Text("Screen Recorder")
+                        Text(
+                            "Screen Recorder",
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.SansSerif
+                        )
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground
+                )
             )
         }
     ) { innerPadding ->
@@ -119,6 +132,7 @@ fun MainScreen(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
         ) {
             if (isExpanded) {
                 // Expanded two-pane layout for tablets/foldables
@@ -139,86 +153,124 @@ fun MainScreen(
                         Text(
                             "Configurations",
                             style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onBackground
                         )
-                        LazyColumn(
+                        Card(
                             modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                         ) {
-                            if (!settingsEnabled) {
-                                item { LockedBanner() }
-                            }
-                            item {
-                                ResolutionSection(
-                                    widthInput = widthInput,
-                                    heightInput = heightInput,
-                                    enabled = settingsEnabled,
-                                    onWidthChange = {
-                                        widthInput = it
-                                        val w = it.toIntOrNull() ?: 1080
-                                        viewModel.updateSettings(settings.copy(resolutionWidth = w))
-                                    },
-                                    onHeightChange = {
-                                        heightInput = it
-                                        val h = it.toIntOrNull() ?: 1920
-                                        viewModel.updateSettings(settings.copy(resolutionHeight = h))
-                                    },
-                                    showCustomResolution = showCustomResolution,
-                                    onPresetSelected = { w, h ->
-                                        showCustomResolution = false
-                                        widthInput = w.toString()
-                                        heightInput = h.toString()
-                                        viewModel.updateSettings(settings.copy(resolutionWidth = w, resolutionHeight = h))
-                                    },
-                                    onCustomToggle = { showCustomResolution = true }
-                                )
-                            }
-                            item {
-                                FpsSection(
-                                    fpsInput = fpsInput,
-                                    enabled = settingsEnabled,
-                                    onFpsChange = {
-                                        fpsInput = it
-                                        val f = it.toIntOrNull() ?: 30
-                                        viewModel.updateSettings(settings.copy(fps = f))
-                                    },
-                                    showCustomFps = showCustomFps,
-                                    onPresetSelected = { f ->
-                                        showCustomFps = false
-                                        fpsInput = f.toString()
-                                        viewModel.updateSettings(settings.copy(fps = f))
-                                    },
-                                    onCustomToggle = { showCustomFps = true }
-                                )
-                            }
-                            item {
-                                EncodingSection(
-                                    selectedEncoding = settings.videoEncoding,
-                                    enabled = settingsEnabled,
-                                    onEncodingSelected = {
-                                        viewModel.updateSettings(settings.copy(videoEncoding = it))
-                                    },
-                                    showDropdown = showEncoderDropdown,
-                                    onToggleDropdown = { showEncoderDropdown = it }
-                                )
-                            }
-                            item {
-                                AudioSection(
-                                    audioSource = settings.audioSource,
-                                    onAudioSourceChange = { source ->
-                                        viewModel.updateSettings(
-                                            settings.copy(
-                                                audioSource = source,
-                                                recordAudio = source != "None"
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                if (!settingsEnabled) {
+                                    item {
+                                        Card(
+                                            modifier = Modifier.fillMaxWidth().animateContentSize(),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)
+                                            ),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f)),
+                                            shape = RoundedCornerShape(12.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(12.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Lock,
+                                                    contentDescription = "Locked",
+                                                    tint = MaterialTheme.colorScheme.error
+                                                )
+                                                Text(
+                                                    text = "Settings locked while recording is in progress.",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                item {
+                                    ResolutionSection(
+                                        widthInput = widthInput,
+                                        heightInput = heightInput,
+                                        enabled = settingsEnabled,
+                                        onWidthChange = {
+                                            widthInput = it
+                                            val w = it.toIntOrNull() ?: 1080
+                                            viewModel.updateSettings(settings.copy(resolutionWidth = w))
+                                        },
+                                        onHeightChange = {
+                                            heightInput = it
+                                            val h = it.toIntOrNull() ?: 1920
+                                            viewModel.updateSettings(settings.copy(resolutionHeight = h))
+                                        },
+                                        showCustomResolution = showCustomResolution,
+                                        onPresetSelected = { w, h ->
+                                            showCustomResolution = false
+                                            widthInput = w.toString()
+                                            heightInput = h.toString()
+                                            viewModel.updateSettings(settings.copy(resolutionWidth = w, resolutionHeight = h))
+                                        },
+                                        onCustomToggle = { showCustomResolution = true }
+                                    )
+                                }
+                                item {
+                                    FpsSection(
+                                        fpsInput = fpsInput,
+                                        enabled = settingsEnabled,
+                                        onFpsChange = {
+                                            fpsInput = it
+                                            val f = it.toIntOrNull() ?: 30
+                                            viewModel.updateSettings(settings.copy(fps = f))
+                                        },
+                                        showCustomFps = showCustomFps,
+                                        onPresetSelected = { f ->
+                                            showCustomFps = false
+                                            fpsInput = f.toString()
+                                            viewModel.updateSettings(settings.copy(fps = f))
+                                        },
+                                        onCustomToggle = { showCustomFps = true }
+                                    )
+                                }
+                                item {
+                                    EncodingSection(
+                                        selectedEncoding = settings.videoEncoding,
+                                        enabled = settingsEnabled,
+                                        onEncodingSelected = {
+                                            viewModel.updateSettings(settings.copy(videoEncoding = it))
+                                        },
+                                        showDropdown = showEncoderDropdown,
+                                        onToggleDropdown = { showEncoderDropdown = it }
+                                    )
+                                }
+                                item {
+                                    AudioSection(
+                                        audioSource = settings.audioSource,
+                                        onAudioSourceChange = { source ->
+                                            viewModel.updateSettings(
+                                                settings.copy(
+                                                    audioSource = source,
+                                                    recordAudio = source != "None"
+                                                )
                                             )
-                                        )
-                                    },
-                                    mergeAudioVideo = settings.mergeAudioVideo,
-                                    onMergeAudioVideoChange = { merge ->
-                                        viewModel.updateSettings(settings.copy(mergeAudioVideo = merge))
-                                    },
-                                    enabled = settingsEnabled
-                                )
+                                        },
+                                        mergeAudioVideo = settings.mergeAudioVideo,
+                                        onMergeAudioVideoChange = { merge ->
+                                            viewModel.updateSettings(
+                                                settings.copy(mergeAudioVideo = merge)
+                                            )
+                                        },
+                                        enabled = settingsEnabled
+                                    )
+                                }
                             }
                         }
                     }
@@ -233,6 +285,7 @@ fun MainScreen(
                         Text(
                             "Operations & History",
                             style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onBackground
                         )
                         RecordingControllerCard(
@@ -257,8 +310,7 @@ fun MainScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    contentPadding = PaddingValues(vertical = 16.dp),
+                        .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
                     item {
@@ -275,13 +327,41 @@ fun MainScreen(
                     item {
                         Text(
                             "Video & Codec Settings",
-                            style = MaterialTheme.typography.titleMedium,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onBackground
                         )
                     }
 
                     if (!settingsEnabled) {
-                        item { LockedBanner() }
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth().animateContentSize(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)
+                                ),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Lock,
+                                        contentDescription = "Locked",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                    Text(
+                                        text = "Settings locked while recording is in progress.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     item {
@@ -354,7 +434,9 @@ fun MainScreen(
                             },
                             mergeAudioVideo = settings.mergeAudioVideo,
                             onMergeAudioVideoChange = { merge ->
-                                viewModel.updateSettings(settings.copy(mergeAudioVideo = merge))
+                                viewModel.updateSettings(
+                                    settings.copy(mergeAudioVideo = merge)
+                                )
                             },
                             enabled = settingsEnabled
                         )
@@ -367,7 +449,8 @@ fun MainScreen(
                         ) {
                             Text(
                                 "Recording Logs",
-                                style = MaterialTheme.typography.titleMedium,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onBackground,
                                 modifier = Modifier.weight(1f)
                             )
@@ -376,7 +459,7 @@ fun MainScreen(
                                     onClick = { viewModel.clearAllRecordings() },
                                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                                 ) {
-                                    Icon(Icons.Default.DeleteSweep, contentDescription = null)
+                                    Icon(Icons.Default.DeleteSweep, contentDescription = "Clear all logs")
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text("Clear All")
                                 }
@@ -403,32 +486,6 @@ fun MainScreen(
 }
 
 @Composable
-private fun LockedBanner() {
-    Surface(
-        modifier = Modifier.fillMaxWidth().animateContentSize(),
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.errorContainer
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Lock,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onErrorContainer
-            )
-            Text(
-                text = "Settings locked while recording is in progress.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onErrorContainer
-            )
-        }
-    }
-}
-
-@Composable
 fun RecordingControllerCard(
     recordingState: ScreenRecordService.RecordingState,
     durationSeconds: Int,
@@ -437,12 +494,11 @@ fun RecordingControllerCard(
     recordSettings: RecordSettings,
     localContext: Context
 ) {
-    val isRecording = recordingState == ScreenRecordService.RecordingState.RECORDING ||
-        recordingState == ScreenRecordService.RecordingState.PAUSED
+    val isRecording = recordingState == ScreenRecordService.RecordingState.RECORDING || recordingState == ScreenRecordService.RecordingState.PAUSED
     val isPaused = recordingState == ScreenRecordService.RecordingState.PAUSED
     val isProcessing = recordingState == ScreenRecordService.RecordingState.PROCESSING
 
-    // Pulse animation for the recording indicator dot
+    // Pulse animation for recording indicators
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val alphaAnim by infiniteTransition.animateFloat(
         initialValue = 0.4f,
@@ -459,7 +515,23 @@ fun RecordingControllerCard(
             .testTag("controller_card"),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
+            containerColor = if (isRecording) {
+                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
+            } else if (isProcessing) {
+                MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.15f)
+            } else {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+            }
+        ),
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (isRecording) {
+                MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+            } else if (isProcessing) {
+                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f)
+            } else {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+            }
         )
     ) {
         Column(
@@ -470,13 +542,15 @@ fun RecordingControllerCard(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             if (isRecording) {
-                // Active recording state
+                // Active recording state visualizer
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(MaterialTheme.colorScheme.errorContainer)
+                        .background(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = RoundedCornerShape(12.dp)
+                        )
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Box(
@@ -492,15 +566,18 @@ fun RecordingControllerCard(
                     Text(
                         text = if (isPaused) "PAUSED" else "REC",
                         color = MaterialTheme.colorScheme.onErrorContainer,
-                        style = MaterialTheme.typography.labelMedium
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        letterSpacing = 1.sp
                     )
                 }
 
                 Text(
                     text = formatSecs(durationSeconds),
-                    style = MaterialTheme.typography.displayMedium,
+                    fontSize = 48.sp,
+                    fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onBackground
                 )
 
                 Text(
@@ -510,13 +587,13 @@ fun RecordingControllerCard(
                 )
 
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    modifier = Modifier.padding(top = 8.dp)
                 ) {
                     // Pause/Resume Button
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                        FilledTonalButton(
+                        Button(
                             onClick = {
                                 val action = if (isPaused) {
                                     ScreenRecordService.ACTION_RESUME
@@ -527,14 +604,19 @@ fun RecordingControllerCard(
                                     this.action = action
                                 })
                             },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondary,
+                                contentColor = MaterialTheme.colorScheme.onSecondary
+                            ),
+                            shape = RoundedCornerShape(16.dp),
                             modifier = Modifier
-                                .height(52.dp)
+                                .height(56.dp)
                                 .weight(1f)
                                 .testTag("pause_resume_button")
                         ) {
                             Icon(
                                 imageVector = if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                                contentDescription = null
+                                contentDescription = if (isPaused) "Resume" else "Pause"
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(if (isPaused) "Resume" else "Pause")
@@ -548,18 +630,20 @@ fun RecordingControllerCard(
                             containerColor = MaterialTheme.colorScheme.error,
                             contentColor = MaterialTheme.colorScheme.onError
                         ),
+                        shape = RoundedCornerShape(16.dp),
                         modifier = Modifier
-                            .height(52.dp)
+                            .height(56.dp)
                             .weight(1.2f)
                             .testTag("stop_record_button")
                     ) {
-                        Icon(Icons.Default.Stop, contentDescription = null)
+                        Icon(Icons.Default.Stop, contentDescription = "Stop Recording")
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Stop")
+                        Text("Stop Record")
                     }
                 }
             } else if (isProcessing) {
-                // Processing / finalizing state
+                // Processing / finalizing state visualizer
+                Spacer(modifier = Modifier.height(8.dp))
                 CircularProgressIndicator(
                     color = MaterialTheme.colorScheme.tertiary,
                     strokeWidth = 4.dp,
@@ -567,84 +651,72 @@ fun RecordingControllerCard(
                         .size(48.dp)
                         .testTag("processing_progress_bar")
                 )
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "Saving & Finalizing…",
-                    style = MaterialTheme.typography.titleLarge,
+                    text = "Saving & Finalizing...",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
                     color = MaterialTheme.colorScheme.tertiary
                 )
                 Text(
-                    "Merging audio tracks and registering the file in your media library. Don't close the app or start another recording.",
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = "Merging audio tracks & registering media in file manager. Do not close the app or start another recording.",
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 18.sp,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
             } else {
-                // Ready to record state
-                Icon(
-                    imageVector = Icons.Default.RadioButtonChecked,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(56.dp)
-                )
+                // Ready to record state visualizer
+                Box(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .background(
+                            Brush.linearGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primary,
+                                    MaterialTheme.colorScheme.tertiary
+                                )
+                            ),
+                            shape = CircleShape
+                        )
+                        .clickable(onClick = onRequestRecord)
+                        .padding(4.dp)
+                        .testTag("start_record_button"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(70.dp)
+                            .background(MaterialTheme.colorScheme.surface, shape = CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.RadioButtonChecked,
+                            contentDescription = "Trigger record",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(40.dp)
+                        )
+                    }
+                }
 
                 Text(
                     "Ready to Record",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.onBackground
                 )
 
                 Text(
-                    "Tap below to grant screen projection and start capturing. Adjust the settings to match your device for best performance.",
-                    style = MaterialTheme.typography.bodyMedium,
+                    "Tap circle to launch screen projection authorization. Keep settings below lightweight and matching your system specs for high performance.",
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 18.sp,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
-
-                Button(
-                    onClick = onRequestRecord,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .testTag("start_record_button")
-                ) {
-                    Icon(Icons.Default.FiberManualRecord, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Start Recording")
-                }
             }
         }
-    }
-}
-
-@Composable
-private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            content = content
-        )
-    }
-}
-
-@Composable
-private fun SectionHeader(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(end = 8.dp)
-        )
-        Text(
-            title,
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface
-        )
     }
 }
 
@@ -660,16 +732,34 @@ fun ResolutionSection(
     onPresetSelected: (Int, Int) -> Unit,
     onCustomToggle: () -> Unit
 ) {
-    // Compute preset heights from the device aspect ratio (rounded to a multiple of 16)
     val localContext = LocalContext.current
     val ratio = remember(localContext) { RecordSettings.getScreenAspect(localContext) }
     val fhdHeight = remember(ratio) { ((1080 * ratio) / 16.0).roundToInt() * 16 }
     val hdHeight = remember(ratio) { ((720 * ratio) / 16.0).roundToInt() * 16 }
     val sdHeight = remember(ratio) { ((480 * ratio) / 16.0).roundToInt() * 16 }
 
-    Box(modifier = Modifier.alpha(if (enabled) 1f else 0.5f)) {
-        SettingsCard {
-            SectionHeader(Icons.Default.AspectRatio, "Resolution")
+    Card(
+        modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.65f),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.AspectRatio,
+                    contentDescription = "Resolution icon",
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+                Text(
+                    "Resolution Preset",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            }
 
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
@@ -677,7 +767,7 @@ fun ResolutionSection(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 ResolutionChip(
-                    label = "1080p",
+                    label = "1080p (FHD)",
                     width = 1080,
                     height = fhdHeight,
                     isSelected = !showCustomResolution && widthInput == "1080" && heightInput == fhdHeight.toString(),
@@ -685,7 +775,7 @@ fun ResolutionSection(
                     onSelect = onPresetSelected
                 )
                 ResolutionChip(
-                    label = "720p",
+                    label = "720p (HD)",
                     width = 720,
                     height = hdHeight,
                     isSelected = !showCustomResolution && widthInput == "720" && heightInput == hdHeight.toString(),
@@ -693,7 +783,7 @@ fun ResolutionSection(
                     onSelect = onPresetSelected
                 )
                 ResolutionChip(
-                    label = "480p",
+                    label = "480p (SD)",
                     width = 480,
                     height = sdHeight,
                     isSelected = !showCustomResolution && widthInput == "480" && heightInput == sdHeight.toString(),
@@ -704,7 +794,11 @@ fun ResolutionSection(
                     selected = showCustomResolution,
                     enabled = enabled,
                     onClick = onCustomToggle,
-                    label = { Text("Custom") }
+                    label = { Text("Custom...") },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 )
             }
 
@@ -721,10 +815,10 @@ fun ResolutionSection(
                         },
                         label = { Text("Width") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
                         modifier = Modifier
                             .weight(1f)
-                            .testTag("custom_resolution_width")
+                            .testTag("custom_resolution_width"),
+                        shape = RoundedCornerShape(12.dp)
                     )
                     OutlinedTextField(
                         value = heightInput,
@@ -734,10 +828,10 @@ fun ResolutionSection(
                         },
                         label = { Text("Height") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
                         modifier = Modifier
                             .weight(1f)
-                            .testTag("custom_resolution_height")
+                            .testTag("custom_resolution_height"),
+                        shape = RoundedCornerShape(12.dp)
                     )
                 }
             }
@@ -758,7 +852,11 @@ fun ResolutionChip(
         selected = isSelected,
         enabled = enabled,
         onClick = { onSelect(width, height) },
-        label = { Text(label) }
+        label = { Text(label) },
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+        )
     )
 }
 
@@ -772,23 +870,61 @@ fun FpsSection(
     onPresetSelected: (Int) -> Unit,
     onCustomToggle: () -> Unit
 ) {
-    Box(modifier = Modifier.alpha(if (enabled) 1f else 0.5f)) {
-        SettingsCard {
-            SectionHeader(Icons.Default.Speed, "Frame Rate")
+    Card(
+        modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.65f),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Speed,
+                    contentDescription = "FPS icon",
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+                Text(
+                    "Frame Rate (FPS)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            }
 
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                FpsChip(fps = 60, isSelected = !showCustomFps && fpsInput == "60", enabled = enabled, onSelect = onPresetSelected)
-                FpsChip(fps = 30, isSelected = !showCustomFps && fpsInput == "30", enabled = enabled, onSelect = onPresetSelected)
-                FpsChip(fps = 24, isSelected = !showCustomFps && fpsInput == "24", enabled = enabled, onSelect = onPresetSelected)
+                FpsChip(
+                    fps = 60,
+                    isSelected = !showCustomFps && fpsInput == "60",
+                    enabled = enabled,
+                    onSelect = onPresetSelected
+                )
+                FpsChip(
+                    fps = 30,
+                    isSelected = !showCustomFps && fpsInput == "30",
+                    enabled = enabled,
+                    onSelect = onPresetSelected
+                )
+                FpsChip(
+                    fps = 24,
+                    isSelected = !showCustomFps && fpsInput == "24",
+                    enabled = enabled,
+                    onSelect = onPresetSelected
+                )
                 FilterChip(
                     selected = showCustomFps,
                     enabled = enabled,
                     onClick = onCustomToggle,
-                    label = { Text("Custom") }
+                    label = { Text("Custom...") },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 )
             }
 
@@ -801,10 +937,10 @@ fun FpsSection(
                     },
                     label = { Text("Frame Rate") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("custom_fps")
+                        .testTag("custom_fps"),
+                    shape = RoundedCornerShape(12.dp)
                 )
             }
         }
@@ -822,7 +958,11 @@ fun FpsChip(
         selected = isSelected,
         enabled = enabled,
         onClick = { onSelect(fps) },
-        label = { Text("$fps FPS") }
+        label = { Text("$fps FPS") },
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+        )
     )
 }
 
@@ -846,19 +986,38 @@ fun EncodingSection(
         CodecSpec("WMV", "SW", "—", "Windows Media Video decoder only.", false)
     )
 
-    Box(modifier = Modifier.alpha(if (enabled) 1f else 0.5f)) {
-        SettingsCard {
-            SectionHeader(Icons.Default.CompassCalibration, "Video Encoding")
+    Card(
+        modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.65f),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.CompassCalibration,
+                    contentDescription = "Encoding Icon",
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+                Text(
+                    "Video Encoding Specification",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    modifier = Modifier.weight(1f)
+                )
+            }
 
-            // Selector dropdown trigger
+            // Custom selector dropdown trigger
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
                     .clickable(enabled = enabled) { onToggleDropdown(true) }
                     .border(
                         1.dp,
-                        MaterialTheme.colorScheme.outline,
+                        MaterialTheme.colorScheme.outline.copy(alpha = if (enabled) 0.5f else 0.2f),
                         RoundedCornerShape(12.dp)
                     )
                     .padding(16.dp)
@@ -872,7 +1031,7 @@ fun EncodingSection(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = selectedEncoding,
-                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         val match = codecsList.firstOrNull { it.name == selectedEncoding }
@@ -880,11 +1039,11 @@ fun EncodingSection(
                             Text(
                                 "Decode: ${match.decode} · Encode: ${match.encode}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
                     }
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Dropdown")
                 }
 
                 DropdownMenu(
@@ -899,17 +1058,31 @@ fun EncodingSection(
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             spec.name,
-                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = FontWeight.Bold,
                                             color = if (spec.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
-                                        CodecBadge("D:${spec.decode}", spec.decode)
+                                        Badge(
+                                            containerColor = if (spec.decode == "HW") Color(0xFF4CAF50) else Color(0xFFFF9800),
+                                            contentColor = Color.White
+                                        ) {
+                                            Text("D:${spec.decode}")
+                                        }
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        CodecBadge("E:${spec.encode}", spec.encode)
+                                        Badge(
+                                            containerColor = when (spec.encode) {
+                                                "HW" -> Color(0xFF4CAF50)
+                                                "—" -> Color(0xFFF44336)
+                                                else -> Color(0xFFFF9800)
+                                            },
+                                            contentColor = Color.White
+                                        ) {
+                                            Text("E:${spec.encode}")
+                                        }
                                     }
                                     Text(
                                         spec.description,
-                                        style = MaterialTheme.typography.bodySmall,
+                                        fontSize = 11.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
@@ -931,23 +1104,6 @@ fun EncodingSection(
     }
 }
 
-@Composable
-private fun CodecBadge(text: String, level: String) {
-    val container = when (level) {
-        "HW" -> MaterialTheme.colorScheme.primaryContainer
-        "—" -> MaterialTheme.colorScheme.errorContainer
-        else -> MaterialTheme.colorScheme.tertiaryContainer
-    }
-    val content = when (level) {
-        "HW" -> MaterialTheme.colorScheme.onPrimaryContainer
-        "—" -> MaterialTheme.colorScheme.onErrorContainer
-        else -> MaterialTheme.colorScheme.onTertiaryContainer
-    }
-    Badge(containerColor = container, contentColor = content) {
-        Text(text)
-    }
-}
-
 data class CodecSpec(
     val name: String,
     val decode: String,
@@ -965,35 +1121,45 @@ fun AudioSection(
     onMergeAudioVideoChange: (Boolean) -> Unit,
     enabled: Boolean = true
 ) {
-    Box(modifier = Modifier.alpha(if (enabled) 1f else 0.5f)) {
-        SettingsCard {
+    Card(
+        modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.65f),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Title & Icon Row
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = if (audioSource != "None") Icons.Default.Mic else Icons.AutoMirrored.Filled.VolumeMute,
-                    contentDescription = null,
-                    tint = if (audioSource != "None") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    contentDescription = "Audio options icon",
+                    tint = if (audioSource != "None") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
                     modifier = Modifier.padding(end = 8.dp)
                 )
                 Text(
                     "Audio Configuration",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
                 )
             }
 
             Text(
                 "Select where audio should be captured from during screen recording.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 16.sp
             )
 
-            // Audio source chips
+            // Audio Source segment chips
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 listOf("None", "Mic", "Internal", "Both").forEach { source ->
+                    val isSelected = audioSource == source
                     val label = when (source) {
                         "None" -> "Mute"
                         "Mic" -> "Microphone"
@@ -1002,16 +1168,23 @@ fun AudioSection(
                         else -> source
                     }
                     FilterChip(
-                        selected = audioSource == source,
+                        selected = isSelected,
                         enabled = enabled,
                         onClick = { onAudioSourceChange(source) },
                         label = { Text(label) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        ),
                         modifier = Modifier.testTag("audio_source_chip_$source")
                     )
                 }
             }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                thickness = 1.dp
+            )
 
             // Merge switch row
             Row(
@@ -1022,13 +1195,15 @@ fun AudioSection(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         "Merge Audio and Video",
-                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        "Integrate audio tracks automatically, or keep separate files.",
+                        "Integrate audio tracks automatically, or preserve separate files",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 16.sp
                     )
                 }
                 Switch(
@@ -1052,7 +1227,7 @@ fun HistorySection(
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -1061,8 +1236,8 @@ fun HistorySection(
             ) {
                 Text(
                     "Recording Logs",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
                     modifier = Modifier.weight(1f)
                 )
                 if (recordings.isNotEmpty()) {
@@ -1070,7 +1245,7 @@ fun HistorySection(
                         onClick = onClearAll,
                         colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.error)
                     ) {
-                        Icon(Icons.Default.DeleteSweep, contentDescription = "Clear all")
+                        Icon(Icons.Default.DeleteSweep, contentDescription = "Clear all archives")
                     }
                 }
             }
@@ -1108,19 +1283,19 @@ fun EmptyStateCard() {
     ) {
         Icon(
             imageVector = Icons.Default.VideoLibrary,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(56.dp)
+            contentDescription = "Empty History",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+            modifier = Modifier.size(64.dp)
         )
         Text(
             "No Recordings Yet",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            "Tap record to capture your screen. Saved clips appear here.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            "Push record to save capture streams safely into Room Database logs.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
     }
@@ -1148,7 +1323,8 @@ fun RecordingHistoryItem(
             .fillMaxWidth()
             .testTag("recording_${recording.id}"),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
     ) {
         Row(
             modifier = Modifier
@@ -1159,12 +1335,13 @@ fun RecordingHistoryItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     recording.fileName,
-                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     "$formattedDate · $fileSizeFormatted · ${recording.resolution} · ${recording.fps} FPS · ${recording.encoder}",
-                    style = MaterialTheme.typography.bodySmall,
+                    fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -1195,7 +1372,7 @@ fun RecordingHistoryItem(
                     },
                     colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.primary)
                 ) {
-                    Icon(Icons.Default.PlayCircle, contentDescription = "Play")
+                    Icon(Icons.Default.PlayCircle, contentDescription = "Stream playback")
                 }
 
                 // Share internal file
@@ -1222,9 +1399,9 @@ fun RecordingHistoryItem(
                             Toast.makeText(localContext, "File does not exist.", Toast.LENGTH_SHORT).show()
                         }
                     },
-                    colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                    colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.secondary)
                 ) {
-                    Icon(Icons.Default.Share, contentDescription = "Share")
+                    Icon(Icons.Default.Share, contentDescription = "Share capture file")
                 }
 
                 // Delete Button
@@ -1232,7 +1409,7 @@ fun RecordingHistoryItem(
                     onClick = { onDelete(recording) },
                     colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete")
+                    Icon(Icons.Default.Delete, contentDescription = "Wipe logs")
                 }
             }
         }

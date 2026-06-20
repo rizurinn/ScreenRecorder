@@ -12,32 +12,34 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Surface
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -46,8 +48,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.data.RecordSettings
 import com.example.service.ScreenRecordService
@@ -73,6 +80,7 @@ class QuickSettingsDialogActivity : ComponentActivity() {
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
+        val recordAudioGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
         val notificationGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions[Manifest.permission.POST_NOTIFICATIONS] ?: false
         } else {
@@ -89,69 +97,85 @@ class QuickSettingsDialogActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
+        
         // Load settings
         settings = RecordSettings.load(this)
 
         setContent {
             MyApplicationTheme {
                 val recordingState by ScreenRecordService.recordingState.collectAsState()
-                val isRecording = recordingState == ScreenRecordService.RecordingState.RECORDING ||
-                    recordingState == ScreenRecordService.RecordingState.PAUSED
+                val isRecording = recordingState == ScreenRecordService.RecordingState.RECORDING || recordingState == ScreenRecordService.RecordingState.PAUSED
                 val isProcessing = recordingState == ScreenRecordService.RecordingState.PROCESSING
                 val isIdle = recordingState == ScreenRecordService.RecordingState.IDLE
                 val settingsLocked = !isIdle
 
-                var selectedResolution by remember {
-                    mutableStateOf(
-                        when (settings.resolutionWidth) {
-                            1080 -> "1080p"
-                            720 -> "720p"
-                            else -> "480p"
-                        }
-                    )
-                }
-                var selectedFps by remember { mutableStateOf(settings.fps) }
-                var selectedAudioSource by remember { mutableStateOf(settings.audioSource) }
-                var mergeAudioVideo by remember { mutableStateOf(settings.mergeAudioVideo) }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth(0.9f)
+                            .clickable(enabled = false) {}, // Prevent closing when tapping inside card
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "Quick Record Controls",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(bottom = 16.dp)
+                            )
 
-                AlertDialog(
-                    onDismissRequest = { if (!isProcessing) finish() },
-                    title = { Text("Quick Record Controls") },
-                    text = {
-                        Column {
                             if (isRecording) {
-                                Surface(
+                                Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(bottom = 16.dp),
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = MaterialTheme.colorScheme.errorContainer
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)
+                                    ),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f)),
+                                    shape = RoundedCornerShape(12.dp)
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(12.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        Icon(
+                                        androidx.compose.material3.Icon(
                                             imageVector = Icons.Default.Lock,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onErrorContainer
+                                            contentDescription = "Locked",
+                                            tint = MaterialTheme.colorScheme.error
                                         )
                                         Text(
-                                            text = "Settings locked. Recording in progress…",
+                                            text = "Settings locked. Recording in progress...",
                                             style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
                                             color = MaterialTheme.colorScheme.onErrorContainer
                                         )
                                     }
                                 }
                             } else if (isProcessing) {
-                                Surface(
+                                Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(bottom = 16.dp),
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = MaterialTheme.colorScheme.tertiaryContainer
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.2f)
+                                    ),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f)),
+                                    shape = RoundedCornerShape(12.dp)
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(12.dp),
@@ -159,20 +183,28 @@ class QuickSettingsDialogActivity : ComponentActivity() {
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         CircularProgressIndicator(
-                                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                            color = MaterialTheme.colorScheme.tertiary,
                                             strokeWidth = 2.dp,
                                             modifier = Modifier.size(16.dp)
                                         )
                                         Text(
-                                            text = "Saving and processing media…",
+                                            text = "Saving and processing media...",
                                             style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
                                             color = MaterialTheme.colorScheme.onTertiaryContainer
                                         )
                                     }
                                 }
                             }
 
-                            SegmentGroup(
+                            // Choices layout
+                            var selectedResolution by remember { mutableStateOf(if (settings.resolutionWidth == 1080) "1080p" else if (settings.resolutionWidth == 720) "720p" else "480p") }
+                            var selectedFps by remember { mutableStateOf(settings.fps) }
+                            var selectedAudioSource by remember { mutableStateOf(settings.audioSource) }
+                            var mergeAudioVideo by remember { mutableStateOf(settings.mergeAudioVideo) }
+
+                            // 1. Quality Row Selection
+                            LabeledSegmentRow(
                                 label = "Resolution",
                                 options = listOf("1080p", "720p", "480p"),
                                 selected = selectedResolution,
@@ -182,17 +214,21 @@ class QuickSettingsDialogActivity : ComponentActivity() {
 
                             Spacer(modifier = Modifier.height(12.dp))
 
-                            SegmentGroup(
+                            // 2. FPS Row Selection
+                            LabeledSegmentRow(
                                 label = "Frame Rate",
                                 options = listOf("30 FPS", "60 FPS"),
-                                selected = "$selectedFps FPS",
+                                selected = "${selectedFps} FPS",
                                 enabled = !settingsLocked,
-                                onSelect = { selectedFps = if (it == "30 FPS") 30 else 60 }
+                                onSelect = { 
+                                    selectedFps = if (it == "30 FPS") 30 else 60
+                                }
                             )
 
                             Spacer(modifier = Modifier.height(12.dp))
 
-                            SegmentGroup(
+                            // 3. Audio Source Options
+                            LabeledSegmentRow(
                                 label = "Audio Source",
                                 options = listOf("None", "Mic", "Internal", "Both"),
                                 selected = selectedAudioSource,
@@ -202,9 +238,11 @@ class QuickSettingsDialogActivity : ComponentActivity() {
 
                             Spacer(modifier = Modifier.height(16.dp))
 
+                            // 4. Split / Merge Row
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .alpha(if (!settingsLocked) 1f else 0.65f)
                                     .padding(vertical = 4.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
@@ -212,12 +250,13 @@ class QuickSettingsDialogActivity : ComponentActivity() {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = "Merge Audio and Video",
-                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 14.sp,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
                                         text = "Merge tracks into a single MP4, or keep split",
-                                        style = MaterialTheme.typography.bodySmall,
+                                        fontSize = 11.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
@@ -228,109 +267,133 @@ class QuickSettingsDialogActivity : ComponentActivity() {
                                     modifier = Modifier.testTag("qs_merge_switch")
                                 )
                             }
-                        }
-                    },
-                    confirmButton = {
-                        when {
-                            isRecording -> {
-                                Button(
-                                    onClick = {
-                                        val stopIntent = Intent(this@QuickSettingsDialogActivity, ScreenRecordService::class.java).apply {
-                                            action = ScreenRecordService.ACTION_STOP
-                                        }
-                                        startService(stopIntent)
-                                        finish()
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.error,
-                                        contentColor = MaterialTheme.colorScheme.onError
-                                    )
-                                ) {
-                                    Text("Stop Recording")
-                                }
-                            }
-                            isProcessing -> {
-                                Button(onClick = {}, enabled = false) {
-                                    CircularProgressIndicator(
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                                        strokeWidth = 2.dp,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Finalizing…")
-                                }
-                            }
-                            else -> {
-                                Button(
-                                    onClick = {
-                                        val ratio = RecordSettings.getScreenAspect(this@QuickSettingsDialogActivity)
-                                        val resolutionW = when (selectedResolution) {
-                                            "1080p" -> 1080
-                                            "720p" -> 720
-                                            else -> 480
-                                        }
-                                        val resolutionH = (kotlin.math.round((resolutionW * ratio) / 16.0) * 16).toInt()
-                                        val bitRate = when (selectedResolution) {
-                                            "1080p" -> 8000000
-                                            "720p" -> 4000000
-                                            else -> 2000000
-                                        }
 
-                                        settings = RecordSettings(
-                                            resolutionWidth = resolutionW,
-                                            resolutionHeight = resolutionH,
-                                            fps = selectedFps,
-                                            audioSource = selectedAudioSource,
-                                            recordAudio = selectedAudioSource != "None",
-                                            mergeAudioVideo = mergeAudioVideo,
-                                            bitRate = bitRate,
-                                            videoEncoding = settings.videoEncoding
+                            Spacer(modifier = Modifier.height(24.dp))
+
+                            // Actions
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                TextButton(
+                                    onClick = { finish() },
+                                    enabled = !isProcessing,
+                                    modifier = Modifier.padding(end = 8.dp)
+                                ) {
+                                    Text("Cancel")
+                                }
+                                if (isRecording) {
+                                    Button(
+                                        onClick = {
+                                            val stopIntent = Intent(this@QuickSettingsDialogActivity, ScreenRecordService::class.java).apply {
+                                                action = ScreenRecordService.ACTION_STOP
+                                            }
+                                            startService(stopIntent)
+                                            finish()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.error
                                         )
-                                        RecordSettings.save(this@QuickSettingsDialogActivity, settings)
-
-                                        checkPermissionsAndProceed()
+                                    ) {
+                                        Text("Stop Recording")
                                     }
-                                ) {
-                                    Text("Start Recording")
+                                } else if (isProcessing) {
+                                    Button(
+                                        onClick = {},
+                                        enabled = false,
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+                                        )
+                                    ) {
+                                        CircularProgressIndicator(
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                                            strokeWidth = 2.dp,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Finalizing...")
+                                    }
+                                } else {
+                                    Button(
+                                        onClick = {
+                                            // Save configurations
+                                            val ratio = RecordSettings.getScreenAspect(this@QuickSettingsDialogActivity)
+                                            val resolutionW = if (selectedResolution == "1080p") 1080 else if (selectedResolution == "720p") 720 else 480
+                                            val resolutionH = (kotlin.math.round((resolutionW * ratio) / 16.0) * 16).toInt()
+                                            val bitRate = if (selectedResolution == "1080p") 8000000 else if (selectedResolution == "720p") 4000000 else 2000000
+                                            
+                                            settings = RecordSettings(
+                                                resolutionWidth = resolutionW,
+                                                resolutionHeight = resolutionH,
+                                                fps = selectedFps,
+                                                audioSource = selectedAudioSource,
+                                                recordAudio = selectedAudioSource != "None",
+                                                mergeAudioVideo = mergeAudioVideo,
+                                                bitRate = bitRate,
+                                                videoEncoding = settings.videoEncoding
+                                            )
+                                            RecordSettings.save(this@QuickSettingsDialogActivity, settings)
+
+                                            // Initiate permissions and capture
+                                            checkPermissionsAndProceed()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.primary
+                                        )
+                                    ) {
+                                        Text("Start Recording")
+                                    }
                                 }
                             }
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { finish() }, enabled = !isProcessing) {
-                            Text("Cancel")
                         }
                     }
-                )
+                }
             }
         }
     }
 
-    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    private fun SegmentGroup(
+    private fun LabeledSegmentRow(
         label: String,
         options: List<String>,
         selected: String,
         enabled: Boolean = true,
         onSelect: (String) -> Unit
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.65f)) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(bottom = 6.dp)
             )
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                options.forEachIndexed { index, option ->
-                    SegmentedButton(
-                        selected = option == selected,
-                        enabled = enabled,
-                        onClick = { onSelect(option) },
-                        shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                options.forEach { option ->
+                    val isSelected = option == selected
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
+                            )
+                            .clickable(enabled = enabled) { onSelect(option) }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(option)
+                        Text(
+                            text = option,
+                            fontSize = 12.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -340,7 +403,7 @@ class QuickSettingsDialogActivity : ComponentActivity() {
     private fun checkPermissionsAndProceed() {
         val permissions = mutableListOf<String>()
 
-        // RECORD_AUDIO is only requested if we are recording audio
+        // RECORD_AUDIO is only requested if we are recording audio or proactively
         if (settings.audioSource != "None" && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             permissions.add(Manifest.permission.RECORD_AUDIO)
         }
@@ -351,7 +414,7 @@ class QuickSettingsDialogActivity : ComponentActivity() {
             }
         }
 
-        // On Android 9 and lower (API <= 28), WRITE_EXTERNAL_STORAGE is needed to write to the public Movies directory
+        // On Android 9 and lower (API <= 28), we need WRITE_EXTERNAL_STORAGE to write to public Movies directory
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
                 permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
